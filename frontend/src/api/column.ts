@@ -1,4 +1,5 @@
 import api from './axios'
+import type { SubscriptionPlan } from '../types'
 
 export const columnApi = {
   list: (params?: { page?: number; size?: number; category?: string }) =>
@@ -11,7 +12,10 @@ export const columnApi = {
   getArticle: (columnId: string, articleId: string) =>
     api.get(`/columns/${columnId}/articles/${articleId}`),
 
-  subscribe: (columnId: string, plan: 'MONTHLY' | 'QUARTERLY' | 'YEARLY') =>
+  getSubscriptionStatus: (columnId: string) =>
+    api.get(`/columns/${columnId}/subscription`),
+
+  subscribe: (columnId: string, plan: SubscriptionPlan) =>
     api.post(`/columns/${columnId}/subscribe`, { plan }),
 
   mySubscriptions: () => api.get('/my/subscriptions'),

@@ -41,10 +41,25 @@ export interface Article {
   id: string
   columnId: string
   title: string
-  content: string
+  content?: string
   summary?: string
   sequence: number
   createdAt: string
+  /** 当前用户能否阅读全文（后端按订阅关系动态返回） */
+  readable?: boolean
+  /** NOT_SUBSCRIBED 从未订阅；EXPIRED_AFTER 订阅失效后才更新 */
+  lockReason?: 'NOT_SUBSCRIBED' | 'EXPIRED_AFTER'
+}
+
+export type SubscriptionPlan = 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
+
+/** 当前用户对某专栏的订阅状态及各续费档位调整后的到期日 */
+export interface SubscriptionStatus {
+  status: 'NONE' | 'ACTIVE' | 'EXPIRED'
+  startDate?: string
+  endDate?: string
+  plan?: SubscriptionPlan
+  planEndDates: Record<SubscriptionPlan, string>
 }
 
 export interface AudioCourse {

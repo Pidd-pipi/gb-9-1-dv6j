@@ -3,6 +3,7 @@ package com.knowledge.platform.controller;
 import com.knowledge.platform.dto.ApiResponse;
 import com.knowledge.platform.dto.ColumnCreateRequest;
 import com.knowledge.platform.dto.SubscribeRequest;
+import com.knowledge.platform.dto.SubscriptionStatusResponse;
 import com.knowledge.platform.entity.Article;
 import com.knowledge.platform.entity.Column;
 import com.knowledge.platform.entity.Subscription;
@@ -18,7 +19,6 @@ import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Optional;
 
 @RestController
 @RequestMapping("/columns")
@@ -59,7 +59,8 @@ public class ColumnController {
 
     @GetMapping("/{id}/articles")
     public ApiResponse<List<Article>> getArticles(@PathVariable String id) {
-        List<Article> articles = articleService.getAllArticles(id);
+        String userId = currentUserUtil.getCurrentUserId();
+        List<Article> articles = articleService.getArticlesWithAccess(id, userId);
         return ApiResponse.success(articles);
     }
 
@@ -67,11 +68,18 @@ public class ColumnController {
     public ApiResponse<Article> getArticle(
             @PathVariable String columnId,
             @PathVariable String articleId) {
-        Optional<Article> articleOpt = articleService.getArticle(columnId, articleId);
-        if (articleOpt.isEmpty()) {
+        String userId = currentUserUtil.getCurrentUserId();
+        Article article = articleService.getArticleWithAccess(columnId, articleId, userId);
+        if (article == null) {
             return ApiResponse.error("文章不存在");
         }
-        return ApiResponse.success(articleOpt.get());
+        return ApiResponse.success(article);
+    }
+
+    @GetMapping("/{id}/subscription")
+    public ApiResponse<SubscriptionStatusResponse> getSubscriptionStatus(@PathVariable String id) {
+        String userId = currentUserUtil.getCurrentUserId();
+        return ApiResponse.success(subscriptionService.getSubscriptionStatus(userId, id));
     }
 
     @PostMapping("/{id}/subscribe")

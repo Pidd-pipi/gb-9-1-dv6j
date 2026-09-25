@@ -8,6 +8,7 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import ColumnList from './pages/ColumnList'
 import ColumnDetail from './pages/ColumnDetail'
+import ArticleReader from './pages/ArticleReader'
 import AudioCourseList from './pages/AudioCourseList'
 import AudioCourseDetail from './pages/AudioCourseDetail'
 import EbookList from './pages/EbookList'
@@ -51,6 +52,7 @@ function App() {
         <Route index element={<Home />} />
         <Route path="columns" element={<ColumnList />} />
         <Route path="columns/:id" element={<ColumnDetail />} />
+        <Route path="columns/:columnId/articles/:articleId" element={<ArticleReader />} />
         <Route path="audio" element={<AudioCourseList />} />
         <Route path="audio/:id" element={<AudioCourseDetail />} />
         <Route path="audio/play/:courseId/:episodeId" element={<AudioPlayer />} />
