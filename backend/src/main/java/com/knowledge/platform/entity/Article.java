@@ -2,6 +2,7 @@ package com.knowledge.platform.entity;
 
 import lombok.Data;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.index.TextIndexed;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -27,6 +28,12 @@ public class Article {
     private String content;
 
     private Integer sequence;
+
+    /**
+     * 当前用户是否可读全文（不持久化，由查询时按订阅状态计算）。
+     */
+    @Transient
+    private Boolean readable;
 
     private LocalDateTime createdAt;
 

@@ -44,6 +44,7 @@ export interface Article {
   content: string
   summary?: string
   sequence: number
+  readable?: boolean
   createdAt: string
 }
 

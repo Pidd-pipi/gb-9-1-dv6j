@@ -13,10 +13,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Optional;
 
 @Service
 public class SubscriptionService {
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
     @Autowired
     private SubscriptionRepository subscriptionRepository;
 
@@ -28,9 +31,41 @@ public class SubscriptionService {
 
     public ApiResponse<Page<Subscription>> getMySubscriptions(String userId, Pageable pageable) {
         Page<Subscription> subscriptions = subscriptionRepository.findByUserId(userId, pageable);
+        subscriptions.forEach(this::refreshStatusIfExpired);
         return ApiResponse.success(subscriptions);
     }
 
+    /**
+     * 查询用户对某个专栏的当前订阅（含已过期），不存在时返回空。
+     */
+    public Optional<Subscription> getSubscription(String userId, String columnId) {
+        if (userId == null) {
+            return Optional.empty();
+        }
+        return subscriptionRepository.findByUserIdAndColumnId(userId, columnId)
+                .map(this::refreshStatusIfExpired);
+    }
+
+    /**
+     * 订阅已过期但状态仍未更新时，惰性刷新为 EXPIRED。
+     */
+    private Subscription refreshStatusIfExpired(Subscription subscription) {
+        if (subscription.getStatus() == Subscription.Status.ACTIVE
+                && subscription.getEndDate() != null
+                && subscription.getEndDate().isBefore(LocalDateTime.now())) {
+            subscription.setStatus(Subscription.Status.EXPIRED);
+            subscription.setUpdatedAt(LocalDateTime.now());
+            return subscriptionRepository.save(subscription);
+        }
+        return subscription;
+    }
+
+    /**
+     * 订阅/续费统一入口：
+     * - 首次订阅：从当前时间起算；
+     * - 到期前续费：新时长在原到期日基础上往后叠加；
+     * - 已过期续费：从当前时间重新起算。
+     */
     @Transactional
     public ApiResponse<Subscription> subscribe(String userId, String columnId, SubscribeRequest request) {
         Optional<Column> columnOpt = columnRepository.findById(columnId);
@@ -38,27 +73,41 @@ public class SubscriptionService {
             return ApiResponse.error("专栏不存在");
         }
 
-        Optional<Subscription> existing = subscriptionRepository.findByUserIdAndColumnIdAndStatus(
-                userId, columnId, Subscription.Status.ACTIVE
-        );
-        if (existing.isPresent()) {
-            return ApiResponse.error("您已订阅该专栏");
+        Subscription.Plan plan;
+        try {
+            plan = Subscription.Plan.valueOf(request.getPlan().toUpperCase());
+        } catch (IllegalArgumentException | NullPointerException e) {
+            return ApiResponse.error("无效的订阅档位");
         }
 
-        Subscription.Plan plan = Subscription.Plan.valueOf(request.getPlan().toUpperCase());
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime endDate = switch (plan) {
-            case MONTHLY -> now.plusMonths(1);
-            case QUARTERLY -> now.plusMonths(3);
-            case YEARLY -> now.plusYears(1);
-        };
+        Optional<Subscription> existingOpt = subscriptionRepository.findByUserIdAndColumnId(userId, columnId);
+        if (existingOpt.isPresent()) {
+            Subscription subscription = existingOpt.get();
+            boolean stillActive = subscription.getEndDate() != null
+                    && subscription.getEndDate().isAfter(now);
+            // 未过期则在原到期日上叠加；已过期则重新起算
+            LocalDateTime base = stillActive ? subscription.getEndDate() : now;
+            if (!stillActive) {
+                subscription.setStartDate(now);
+            }
+            subscription.setEndDate(plusPlan(base, plan));
+            subscription.setPlan(plan);
+            subscription.setStatus(Subscription.Status.ACTIVE);
+            subscription.setUpdatedAt(now);
+            subscription = subscriptionRepository.save(subscription);
+
+            String message = (stillActive ? "续费成功，有效期已延长至 " : "订阅已重新生效，有效期至 ")
+                    + subscription.getEndDate().format(DATE_FORMATTER);
+            return ApiResponse.success(message, subscription);
+        }
 
         Subscription subscription = new Subscription();
         subscription.setUserId(userId);
         subscription.setColumnId(columnId);
         subscription.setPlan(plan);
         subscription.setStartDate(now);
-        subscription.setEndDate(endDate);
+        subscription.setEndDate(plusPlan(now, plan));
         subscription.setStatus(Subscription.Status.ACTIVE);
         subscription.setCreatedAt(now);
         subscription.setUpdatedAt(now);
@@ -69,6 +118,14 @@ public class SubscriptionService {
         column.setSubscriberCount(column.getSubscriberCount() + 1);
         columnRepository.save(column);
 
-        return ApiResponse.success("订阅成功", subscription);
+        return ApiResponse.success("订阅成功，有效期至 " + subscription.getEndDate().format(DATE_FORMATTER), subscription);
+    }
+
+    private LocalDateTime plusPlan(LocalDateTime base, Subscription.Plan plan) {
+        return switch (plan) {
+            case MONTHLY -> base.plusMonths(1);
+            case QUARTERLY -> base.plusMonths(3);
+            case YEARLY -> base.plusYears(1);
+        };
     }
 }

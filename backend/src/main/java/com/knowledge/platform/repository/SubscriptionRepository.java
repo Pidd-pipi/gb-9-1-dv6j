@@ -12,6 +12,7 @@ import java.util.Optional;
 public interface SubscriptionRepository extends MongoRepository<Subscription, String> {
     Page<Subscription> findByUserId(String userId, Pageable pageable);
     List<Subscription> findByUserIdAndStatus(String userId, Subscription.Status status);
+    Optional<Subscription> findByUserIdAndColumnId(String userId, String columnId);
     Optional<Subscription> findByUserIdAndColumnIdAndStatus(String userId, String columnId, Subscription.Status status);
     List<Subscription> findByEndDateBeforeAndStatus(LocalDateTime date, Subscription.Status status);
 }

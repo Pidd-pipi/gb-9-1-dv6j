@@ -14,6 +14,8 @@ export const columnApi = {
   subscribe: (columnId: string, plan: 'MONTHLY' | 'QUARTERLY' | 'YEARLY') =>
     api.post(`/columns/${columnId}/subscribe`, { plan }),
 
+  getColumnSubscription: (columnId: string) => api.get(`/columns/${columnId}/subscription`),
+
   mySubscriptions: () => api.get('/my/subscriptions'),
 
   create: (data: any) => api.post('/columns', data),

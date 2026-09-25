@@ -59,7 +59,8 @@ public class ColumnController {
 
     @GetMapping("/{id}/articles")
     public ApiResponse<List<Article>> getArticles(@PathVariable String id) {
-        List<Article> articles = articleService.getAllArticles(id);
+        String userId = currentUserUtil.getCurrentUserId();
+        List<Article> articles = articleService.getArticlesWithAccess(id, userId);
         return ApiResponse.success(articles);
     }
 
@@ -67,11 +68,21 @@ public class ColumnController {
     public ApiResponse<Article> getArticle(
             @PathVariable String columnId,
             @PathVariable String articleId) {
-        Optional<Article> articleOpt = articleService.getArticle(columnId, articleId);
+        String userId = currentUserUtil.getCurrentUserId();
+        Optional<Article> articleOpt = articleService.getArticleWithAccess(columnId, articleId, userId);
         if (articleOpt.isEmpty()) {
             return ApiResponse.error("文章不存在");
         }
         return ApiResponse.success(articleOpt.get());
+    }
+
+    @GetMapping("/{id}/subscription")
+    public ApiResponse<Subscription> getMySubscription(@PathVariable String id) {
+        String userId = currentUserUtil.getCurrentUserId();
+        if (userId == null) {
+            return ApiResponse.success(null);
+        }
+        return ApiResponse.success(subscriptionService.getSubscription(userId, id).orElse(null));
     }
 
     @PostMapping("/{id}/subscribe")

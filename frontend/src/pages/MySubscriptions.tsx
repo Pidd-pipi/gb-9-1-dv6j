@@ -61,6 +61,13 @@ function MySubscriptions() {
                     >
                       查看专栏
                     </Button>,
+                    <Button
+                      type="link"
+                      key="renew"
+                      onClick={() => navigate(`/columns/${sub.columnId}?renew=1`)}
+                    >
+                      {isExpired(sub.endDate) ? '重新订阅' : '续费'}
+                    </Button>,
                   ]}
                 >
                   <Card.Meta

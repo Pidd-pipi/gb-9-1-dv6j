@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Card,
   Typography,
@@ -12,20 +12,27 @@ import {
   Modal,
   message,
   Spin,
+  Alert,
 } from 'antd'
+import { LockOutlined, CheckCircleOutlined } from '@ant-design/icons'
 import { columnApi } from '../api/column'
-import type { Column, Article } from '../types'
+import type { Column, Article, Subscription } from '../types'
+import dayjs, { Dayjs } from 'dayjs'
 
 const { Title, Text, Paragraph } = Typography
+
+type PlanType = 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
 
 function ColumnDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [column, setColumn] = useState<Column | null>(null)
   const [articles, setArticles] = useState<Article[]>([])
+  const [subscription, setSubscription] = useState<Subscription | null>(null)
   const [loading, setLoading] = useState(false)
   const [subscribeModalVisible, setSubscribeModalVisible] = useState(false)
-  const [selectedPlan, setSelectedPlan] = useState<'MONTHLY' | 'QUARTERLY' | 'YEARLY'>('MONTHLY')
+  const [selectedPlan, setSelectedPlan] = useState<PlanType>('MONTHLY')
   const [subscribing, setSubscribing] = useState(false)
 
   useEffect(() => {
@@ -34,16 +41,27 @@ function ColumnDetail() {
     }
   }, [id])
 
+  // 从“我的订阅”等页面带 renew=1 跳转过来时，自动打开续费弹窗
+  useEffect(() => {
+    if (searchParams.get('renew') === '1' && !loading) {
+      setSubscribeModalVisible(true)
+      searchParams.delete('renew')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [searchParams, loading])
+
   const loadColumnDetail = async () => {
     if (!id) return
     setLoading(true)
     try {
-      const [columnRes, articlesRes] = await Promise.all([
+      const [columnRes, articlesRes, subscriptionRes] = await Promise.all([
         columnApi.getById(id),
         columnApi.getArticles(id),
+        columnApi.getColumnSubscription(id),
       ])
       setColumn(columnRes.data?.data || columnRes.data)
-      setArticles(articlesRes.data?.data?.content || articlesRes.data || [])
+      setArticles(articlesRes.data?.data || [])
+      setSubscription(subscriptionRes.data?.data || null)
     } catch (error) {
       console.error('Failed to load column:', error)
     } finally {
@@ -51,13 +69,41 @@ function ColumnDetail() {
     }
   }
 
+  const subscriptionActive = useMemo(
+    () => !!subscription && dayjs(subscription.endDate).isAfter(dayjs()),
+    [subscription]
+  )
+
+  // 续费时长从原到期日叠加；已过期或新订阅则从现在开始起算
+  const renewBase: Dayjs = useMemo(
+    () => (subscriptionActive ? dayjs(subscription!.endDate) : dayjs()),
+    [subscriptionActive, subscription]
+  )
+
+  const planOptions = useMemo(() => {
+    if (!column) return []
+    const plans: Array<{ value: PlanType; label: string; price: number; endDate: Dayjs }> = [
+      { value: 'MONTHLY', label: '月付', price: column.monthlyPrice, endDate: renewBase.add(1, 'month') },
+      { value: 'QUARTERLY', label: '季付', price: column.quarterlyPrice, endDate: renewBase.add(3, 'month') },
+      { value: 'YEARLY', label: '年付', price: column.yearlyPrice, endDate: renewBase.add(1, 'year') },
+    ]
+    return plans
+  }, [column, renewBase])
+
   const handleSubscribe = async () => {
     if (!id) return
     setSubscribing(true)
     try {
-      await columnApi.subscribe(id, selectedPlan)
-      message.success('订阅成功')
+      const res = await columnApi.subscribe(id, selectedPlan)
+      const body = res.data
+      if (body?.success === false) {
+        message.error(body.message || '操作失败')
+        return
+      }
+      message.success(body?.message || '订阅成功')
       setSubscribeModalVisible(false)
+      // 刷新订阅状态和文章可读状态
+      loadColumnDetail()
     } catch (error) {
       console.error('Subscribe failed:', error)
     } finally {
@@ -65,17 +111,15 @@ function ColumnDetail() {
     }
   }
 
-  const planOptions = column
-    ? [
-        { label: `月付 ¥${column.monthlyPrice}`, value: 'MONTHLY' },
-        { label: `季付 ¥${column.quarterlyPrice}`, value: 'QUARTERLY' },
-        { label: `年付 ¥${column.yearlyPrice}`, value: 'YEARLY' },
-      ]
-    : []
-
   if (loading || !column) {
     return <Spin style={{ display: 'flex', justifyContent: 'center', marginTop: 100 }} />
   }
+
+  const subscribeButtonText = !subscription
+    ? '立即订阅'
+    : subscriptionActive
+      ? '续费'
+      : '重新订阅'
 
   return (
     <div>
@@ -114,13 +158,25 @@ function ColumnDetail() {
                 ¥{column.monthlyPrice}
               </Descriptions.Item>
             </Descriptions>
+            {subscription && (
+              <Alert
+                style={{ marginTop: 16 }}
+                type={subscriptionActive ? 'success' : 'warning'}
+                showIcon
+                message={
+                  subscriptionActive
+                    ? `订阅有效，到期时间：${dayjs(subscription.endDate).format('YYYY-MM-DD HH:mm')}`
+                    : `订阅已于 ${dayjs(subscription.endDate).format('YYYY-MM-DD HH:mm')} 到期，到期前发布的文章仍可阅读，续费后可读全部文章`
+                }
+              />
+            )}
             <div style={{ marginTop: 24 }}>
               <Button
                 type="primary"
                 size="large"
                 onClick={() => setSubscribeModalVisible(true)}
               >
-                立即订阅
+                {subscribeButtonText}
               </Button>
             </div>
           </div>
@@ -133,6 +189,15 @@ function ColumnDetail() {
           renderItem={(article, index) => (
             <List.Item
               actions={[
+                article.readable ? (
+                  <Tag icon={<CheckCircleOutlined />} color="success" key="status">
+                    可读
+                  </Tag>
+                ) : (
+                  <Tag icon={<LockOutlined />} color="warning" key="status">
+                    订阅可读
+                  </Tag>
+                ),
                 <Button
                   type="link"
                   key="read"
@@ -151,7 +216,16 @@ function ColumnDetail() {
                     {article.title}
                   </span>
                 }
-                description={article.summary || article.description}
+                description={
+                  <span>
+                    {article.summary}
+                    {article.createdAt && (
+                      <Text type="secondary" style={{ marginLeft: 12, fontSize: 12 }}>
+                        发布于 {dayjs(article.createdAt).format('YYYY-MM-DD')}
+                      </Text>
+                    )}
+                  </span>
+                }
               />
             </List.Item>
           )}
@@ -159,25 +233,40 @@ function ColumnDetail() {
       </Card>
 
       <Modal
-        title="选择订阅计划"
+        title={subscription ? '续费订阅' : '选择订阅计划'}
         open={subscribeModalVisible}
         onOk={handleSubscribe}
         onCancel={() => setSubscribeModalVisible(false)}
         confirmLoading={subscribing}
-        okText="确认订阅"
+        okText={subscription ? '确认续费' : '确认订阅'}
         cancelText="取消"
       >
+        {subscription && (
+          <Alert
+            style={{ marginBottom: 16 }}
+            type="info"
+            showIcon
+            message={
+              subscriptionActive
+                ? `当前有效期至 ${dayjs(subscription.endDate).format('YYYY-MM-DD HH:mm')}，续费时长将从到期日往后叠加`
+                : `订阅已于 ${dayjs(subscription.endDate).format('YYYY-MM-DD HH:mm')} 到期，续费将从现在重新起算`
+            }
+          />
+        )}
         <Radio.Group
           value={selectedPlan}
-          onChange={(e) =>
-            setSelectedPlan(e.target.value as 'MONTHLY' | 'QUARTERLY' | 'YEARLY')
-          }
+          onChange={(e) => setSelectedPlan(e.target.value as PlanType)}
           style={{ width: '100%' }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {planOptions.map((option) => (
               <Radio value={option.value} key={option.value}>
-                {option.label}
+                <span>
+                  {option.label} ¥{option.price}
+                  <Text type="secondary" style={{ marginLeft: 12, fontSize: 12 }}>
+                    有效期至 {option.endDate.format('YYYY-MM-DD')}
+                  </Text>
+                </span>
               </Radio>
             ))}
           </div>
